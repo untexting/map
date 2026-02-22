@@ -102,7 +102,6 @@
     .page-header,.controls,.map-wrap,.issue-block,.bills-section,.static-section { padding-left:20px; padding-right:20px; }
     .issue-block { margin-left:20px; margin-right:20px; }
     .filter-select { min-width:unset; width:100%; }
-    .col-session { display:none; }
     table { font-size:0.75rem; min-width:480px; }
     .view-btn { padding:7px 14px; font-size:0.78rem; }
   }
@@ -132,7 +131,7 @@
     <button class="view-btn" id="btnIssue">View by issue</button>
   </div>
   <div class="filter-wrap">
-    <label>Select an issue</label>
+    <label><span id="filterLabel">Select an issue</span></label>
     <select class="filter-select" id="issueSelect">
       <option value="all">All Issues</option>
     </select>
@@ -193,6 +192,7 @@ const STATE_NAMES = {
 const STATE_FULL = {"FEDERAL":"Federal",...STATE_NAMES};
 
 let BILLS = [], ISSUES = {}, selectedState = 'all', selectedIssue = 'all';
+let viewMode = 'state';
 
 // Fallback data
 const FALLBACK_BILLS = [
@@ -290,7 +290,17 @@ async function buildMap() {
     .on('click', (e, d) => {
       const abbr = d.properties.postal;
       if (!ACTIVE_STATES.includes(abbr)) return;
+
+      viewMode = 'state';
       selectedState = selectedState === abbr ? 'all' : abbr;
+      selectedIssue = 'all';
+
+      document.getElementById('btnState').classList.add('active');
+      document.getElementById('btnIssue').classList.remove('active');
+
+      populateFilterDropdown();
+      document.getElementById('issueSelect').value = selectedState;
+
       updateMapColors(); updateIssueBlock(); renderTable();
     })
     .append('title').text(d => STATE_NAMES[d.properties.postal] || '');
@@ -369,15 +379,15 @@ function updateIssueBlock() {
 }
 
 // ── DROPDOWN ──────────────────────────────────────────────────────────────────
-function populateDropdown() {
+function populateIssueDropdown() {
   const sel = document.getElementById('issueSelect');
-  // Keep the first option ("All Issues") and rebuild the rest.
-  while (sel.options.length > 1) sel.remove(1);
+  const label = document.getElementById('filterLabel');
+  if (label) label.textContent = 'Select an issue';
 
-  // Prefer the full master list from the "All Issues" sheet,
-  // but also include any issues present in bills (in case the master list is missing one).
+  sel.innerHTML = '<option value="all">All Issues</option>';
+
   const issuesFromMaster = (typeof ISSUES === 'object' && ISSUES) ? Object.keys(ISSUES) : [];
-  const issuesFromBills = BILLS.map(b => b.issue).filter(Boolean);
+  const issuesFromBills  = BILLS.map(b => b.issue).filter(Boolean);
   const issueList = [...new Set([...issuesFromMaster, ...issuesFromBills])]
     .map(s => String(s).trim())
     .filter(Boolean)
@@ -389,6 +399,34 @@ function populateDropdown() {
     opt.textContent = issue;
     sel.appendChild(opt);
   });
+}
+
+function populateStateDropdown() {
+  const sel = document.getElementById('issueSelect');
+  const label = document.getElementById('filterLabel');
+  if (label) label.textContent = 'Select a state';
+
+  sel.innerHTML = '<option value="all">All States</option>';
+
+  const statesFromActive = (Array.isArray(ACTIVE_STATES) ? ACTIVE_STATES : []).filter(s => s && s !== 'FEDERAL');
+  const statesFromBills  = BILLS.map(b => b.state).filter(s => s && s !== 'FEDERAL');
+  const stateList = [...new Set([...statesFromActive, ...statesFromBills])]
+    .map(s => String(s).trim().toUpperCase())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+
+  stateList.forEach(abbr => {
+    const opt = document.createElement('option');
+    opt.value = abbr;
+    const name = STATE_FULL[abbr] || abbr;
+    opt.textContent = STATE_FULL[abbr] ? `${name} (${abbr})` : abbr;
+    sel.appendChild(opt);
+  });
+}
+
+function populateFilterDropdown() {
+  if (viewMode === 'state') populateStateDropdown();
+  else populateIssueDropdown();
 }
 
 // ── LIVE DATA ─────────────────────────────────────────────────────────────────
@@ -415,7 +453,7 @@ function loadData() {
       const issue = (r['Issue']||'').trim();
       if (issue) ISSUES[issue] = (r['Description']||'').trim();
     });
-    populateDropdown();
+    populateFilterDropdown();
     const dates = BILLS.map(b=>b.updated).filter(Boolean).sort().reverse();
     if (dates[0]) document.getElementById('lastUpdated').textContent = ` · Live · Updated ${dates[0]}`;
     renderTable(); updateIssueBlock(); updateMapColors();
@@ -424,27 +462,47 @@ function loadData() {
 
 // ── CONTROLS ──────────────────────────────────────────────────────────────────
 document.getElementById('btnState').addEventListener('click', () => {
-  selectedState='all'; selectedIssue='all';
+  viewMode = 'state';
+  selectedState = 'all';
+  selectedIssue = 'all';
   document.getElementById('btnState').classList.add('active');
   document.getElementById('btnIssue').classList.remove('active');
-  document.getElementById('issueSelect').value='all';
+
+  populateFilterDropdown();
+  document.getElementById('issueSelect').value = 'all';
+
   updateMapColors(); updateIssueBlock(); renderTable();
 });
+
 document.getElementById('btnIssue').addEventListener('click', () => {
-  selectedState='all';
+  viewMode = 'issue';
+  selectedState = 'all';
+  selectedIssue = 'all';
   document.getElementById('btnIssue').classList.add('active');
   document.getElementById('btnState').classList.remove('active');
+
+  populateFilterDropdown();
+  document.getElementById('issueSelect').value = 'all';
+
   updateMapColors(); updateIssueBlock(); renderTable();
 });
+
 document.getElementById('issueSelect').addEventListener('change', function() {
-  selectedIssue=this.value; selectedState='all';
+  if (viewMode === 'state') {
+    selectedState = this.value;
+    selectedIssue = 'all';
+  } else {
+    selectedIssue = this.value;
+    selectedState = 'all';
+  }
   updateIssueBlock(); updateMapColors(); renderTable();
 });
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 BILLS  = FALLBACK_BILLS;
 ISSUES = FALLBACK_ISSUES;
-populateDropdown();
+viewMode = 'state';
+populateFilterDropdown();
 renderTable();
 updateIssueBlock();
 buildMap();
